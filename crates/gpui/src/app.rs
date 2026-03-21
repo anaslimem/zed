@@ -49,7 +49,8 @@ use crate::{
     PlatformKeyboardMapper, Point, Priority, PromptBuilder, PromptButton, PromptHandle,
     PromptLevel, Render, RenderImage, RenderablePromptHandle, Reservation, ScreenCaptureSource,
     SharedString, SubscriberSet, Subscription, SvgRenderer, Task, TextRenderingMode, TextSystem,
-    ThermalState, Window, WindowAppearance, WindowHandle, WindowId, WindowInvalidator,
+    ThermalState, Window, WindowAppearance, WindowBounds, WindowHandle, WindowId,
+    WindowInvalidator,
     colors::{Colors, GlobalColors},
     hash, init_app_menus,
 };
@@ -646,6 +647,8 @@ pub struct App {
     pub(crate) text_rendering_mode: Rc<Cell<TextRenderingMode>>,
 
     pub(crate) window_update_stack: Vec<WindowId>,
+    /// Last-known bounds for each window, used by `default_bounds` when the active window is on the update stack.
+    pub(crate) window_bounds_cache: FxHashMap<WindowId, WindowBounds>,
     pub(crate) mode: GpuiMode,
     flushing_effects: bool,
     pending_updates: usize,
@@ -702,6 +705,7 @@ impl App {
                 new_entity_observers: SubscriberSet::new(),
                 windows: SlotMap::with_key(),
                 window_update_stack: Vec::new(),
+                window_bounds_cache: FxHashMap::default(),
                 window_handles: FxHashMap::default(),
                 focus_handles: Arc::new(RwLock::new(SlotMap::with_key())),
                 keymap: Rc::new(RefCell::new(Keymap::default())),
@@ -1549,6 +1553,8 @@ impl App {
         self.update(|cx| {
             let mut window = cx.windows.get_mut(id)?.take()?;
 
+            cx.window_bounds_cache.insert(id, window.window_bounds());
+
             let root_view = window.root.clone().unwrap();
 
             cx.window_update_stack.push(window.handle.id);
@@ -1559,6 +1565,7 @@ impl App {
                 if window.removed {
                     cx.window_handles.remove(&id);
                     cx.windows.remove(id);
+                    cx.window_bounds_cache.remove(&id);
 
                     cx.window_closed_observers.clone().retain(&(), |callback| {
                         callback(cx);

@@ -1048,13 +1048,12 @@ pub(crate) struct ElementStateBox {
 }
 
 fn default_bounds(display_id: Option<DisplayId>, cx: &mut App) -> WindowBounds {
-    // TODO, BUG: if you open a window with the currently active window
-    // on the stack, this will erroneously fallback to `None`
-    //
-    // TODO these should be the initial window bounds not considering maximized/fullscreen
-    let active_window_bounds = cx
-        .active_window()
-        .and_then(|w| w.update(cx, |_, window, _| window.window_bounds()).ok());
+    let active_window_bounds = cx.active_window().and_then(|w| {
+        let id = w.id;
+        w.update(cx, |_, window, _| window.window_bounds())
+            .ok()
+            .or_else(|| cx.window_bounds_cache.get(&id).copied())
+    });
 
     const CASCADE_OFFSET: f32 = 25.0;
 
@@ -5690,5 +5689,63 @@ pub fn outline(
         border_widths: (1.).into(),
         border_color: border_color.into(),
         border_style,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        AppContext, Bounds, Context, Render, TestAppContext, Window, WindowBounds, WindowOptions,
+        point, px, size,
+    };
+
+    struct Empty;
+
+    impl Render for Empty {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl crate::IntoElement {
+            crate::div()
+        }
+    }
+
+    /// A new window opened from inside an existing window's update should cascade from the active window's position.
+    #[gpui::test]
+    fn test_new_window_cascades_from_active_window(cx: &mut TestAppContext) {
+        let window_a = cx
+            .update(|cx| {
+                cx.open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(Bounds {
+                            origin: point(px(100.), px(100.)),
+                            size: size(px(800.), px(600.)),
+                        })),
+                        ..Default::default()
+                    },
+                    |_, cx| cx.new(|_| Empty),
+                )
+            })
+            .unwrap();
+
+        window_a
+            .update(cx, |_, window, _| window.activate_window())
+            .unwrap();
+
+        let window_b = window_a
+            .update(cx, |_, _window, cx| {
+                cx.open_window(
+                    WindowOptions::default(), // no bounds → triggers default_bounds()
+                    |_, cx| cx.new(|_| Empty),
+                )
+            })
+            .unwrap()
+            .unwrap();
+
+        let b_origin = window_b
+            .update(cx, |_, window, _| match window.window_bounds() {
+                WindowBounds::Windowed(b) => b.origin,
+                other => panic!("expected Windowed, got {:?}", other),
+            })
+            .unwrap();
+
+        assert_eq!(b_origin, point(px(125.), px(125.)));
     }
 }
