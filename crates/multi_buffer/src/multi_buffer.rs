@@ -7838,13 +7838,13 @@ impl<'a> MultiBufferExcerpt<'a> {
         let start = self.diff_transforms.start().output_dimension.0 + overshoot;
 
         let end = if buffer_range.start < buffer_range.end {
-            let overshoot = buffer_range.end - self.buffer_offset;
+            let clamped_end = buffer_range.end.min(self.excerpt.buffer_end_offset());
+            let overshoot = clamped_end - self.buffer_offset;
             let excerpt_offset = self.excerpt_offset + overshoot;
             let excerpt_seek_dim = excerpt_offset;
             self.diff_transforms
                 .seek_forward(&excerpt_seek_dim, Bias::Right);
             let overshoot = excerpt_offset - self.diff_transforms.start().excerpt_dimension;
-            // todo(lw): Clamp end to the excerpt boundaries
             self.diff_transforms.start().output_dimension.0 + overshoot
         } else {
             start

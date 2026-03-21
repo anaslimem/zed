@@ -508,6 +508,33 @@ async fn test_diff_hunks_in_range(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn test_map_range_from_buffer_clamps_to_excerpt_end(cx: &mut App) {
+    let buffer = cx.new(|cx| Buffer::local("abcdef", cx));
+    let multibuffer = cx.new(|_| MultiBuffer::new(Capability::ReadWrite));
+
+    multibuffer.update(cx, |multibuffer, cx| {
+        multibuffer.set_excerpt_ranges_for_path(
+            PathKey::sorted(0),
+            buffer.clone(),
+            &buffer.read(cx).snapshot(),
+            vec![ExcerptRange::new(Point::new(0, 1)..Point::new(0, 4))],
+            cx,
+        );
+    });
+
+    let snapshot = multibuffer.read(cx).snapshot(cx);
+    let mut excerpt = snapshot
+        .excerpt_containing(MultiBufferOffset(0)..MultiBufferOffset(1))
+        .expect("missing excerpt");
+    let buffer_range = excerpt.buffer_range();
+    let expected_end = excerpt.start_offset() + (buffer_range.end - buffer_range.start);
+    let mapped = excerpt.map_range_from_buffer(buffer_range.start..(buffer_range.end + 2));
+
+    assert_eq!(mapped.start, excerpt.start_offset());
+    assert_eq!(mapped.end, expected_end);
+}
+
+#[gpui::test]
 async fn test_diff_hunks_in_range_query_starting_at_added_row(cx: &mut TestAppContext) {
     let base_text = "one\ntwo\nthree\n";
     let text = "one\nTWO\nthree\n";
