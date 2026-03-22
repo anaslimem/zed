@@ -40,6 +40,7 @@ mod ui;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use ::ui::IconName;
 use agent_client_protocol as acp;
 use agent_settings::{AgentProfileId, AgentSettings};
 use assistant_slash_command::SlashCommandRegistry;
@@ -239,11 +240,11 @@ pub struct NewNativeAgentThreadFromSummary {
     from_session_id: agent_client_protocol::SessionId,
 }
 
-// TODO unify this with AgentType
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Agent {
     NativeAgent,
+    TextThread,
     Custom {
         #[serde(rename = "name")]
         id: AgentId,
@@ -255,6 +256,25 @@ impl Agent {
         match self {
             Self::NativeAgent => agent::ZED_AGENT_ID.clone(),
             Self::Custom { id } => id.clone(),
+            Self::TextThread => agent::ZED_AGENT_ID.clone(),
+        }
+    }
+
+    pub fn is_native(&self) -> bool {
+        matches!(self, Self::NativeAgent)
+    }
+
+    pub fn label(&self) -> SharedString {
+        match self {
+            Self::NativeAgent | Self::TextThread => "Zed Agent".into(),
+            Self::Custom { id, .. } => id.0.clone(),
+        }
+    }
+
+    pub fn icon(&self) -> Option<IconName> {
+        match self {
+            Self::NativeAgent | Self::TextThread => None,
+            Self::Custom { .. } => Some(IconName::Sparkle),
         }
     }
 
@@ -268,6 +288,9 @@ impl Agent {
             Self::Custom { id: name } => {
                 Rc::new(agent_servers::CustomAgentServer::new(name.clone()))
             }
+            Self::TextThread => Rc::new(agent_servers::CustomAgentServer::new(
+                agent::ZED_AGENT_ID.clone(),
+            )),
         }
     }
 }
