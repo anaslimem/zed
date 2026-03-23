@@ -244,6 +244,7 @@ impl PickerDelegate for IconThemeSelectorDelegate {
                     100,
                     &Default::default(),
                     background,
+                    None,
                 )
                 .await
             };

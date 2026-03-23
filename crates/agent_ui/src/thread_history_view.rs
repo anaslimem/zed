@@ -214,6 +214,7 @@ impl ThreadHistoryView {
                     MAX_MATCHES,
                     &Default::default(),
                     executor,
+                    None,
                 )
                 .await;
 

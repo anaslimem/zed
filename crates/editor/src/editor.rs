@@ -27857,6 +27857,7 @@ fn snippet_completions(
                         MAX_RESULTS - matches.len(), // always prioritize longer snippets
                         &Default::default(),
                         executor.clone(),
+                        None,
                     )
                     .await
                     .into_iter()

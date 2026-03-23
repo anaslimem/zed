@@ -44,7 +44,10 @@ use ui::{
     ContextMenu, Divider, HighlightedLabel, KeyBinding, ListItem, ListItemSpacing, ListSubHeader,
     PopoverMenu, PopoverMenuHandle, TintColor, Tooltip, prelude::*,
 };
-use util::{ResultExt, paths::PathExt};
+use util::{
+    ResultExt,
+    paths::{PathExt, PathStyle},
+};
 use workspace::{
     HistoryManager, ModalView, MultiWorkspace, OpenMode, OpenOptions, OpenVisible, PathList,
     SerializedWorkspaceLocation, Workspace, WorkspaceDb, WorkspaceId,
@@ -939,6 +942,11 @@ impl PickerDelegate for RecentProjectsDelegate {
         let query = query.trim_start();
         let smart_case = query.chars().any(|c| c.is_uppercase());
         let is_empty_query = query.is_empty();
+        let path_style = self
+            .workspace
+            .upgrade()
+            .map(|ws| ws.read(cx).path_style(cx))
+            .unwrap_or_else(PathStyle::local);
 
         let folder_matches = if self.open_folders.is_empty() {
             Vec::new()
@@ -958,6 +966,7 @@ impl PickerDelegate for RecentProjectsDelegate {
                 100,
                 &Default::default(),
                 cx.background_executor().clone(),
+                Some(path_style),
             ))
         };
 
@@ -984,6 +993,7 @@ impl PickerDelegate for RecentProjectsDelegate {
             100,
             &Default::default(),
             cx.background_executor().clone(),
+            Some(path_style),
         ));
         project_group_matches.sort_unstable_by(|a, b| {
             b.score
@@ -1016,6 +1026,7 @@ impl PickerDelegate for RecentProjectsDelegate {
             100,
             &Default::default(),
             cx.background_executor().clone(),
+            Some(path_style),
         ));
         recent_matches.sort_unstable_by(|a, b| {
             b.score

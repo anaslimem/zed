@@ -449,6 +449,7 @@ impl TabSwitcherDelegate {
                 10000,
                 &Default::default(),
                 cx.background_executor().clone(),
+                None,
             ))
             .into_iter()
             .map(|m| all_items[m.candidate_id].clone())

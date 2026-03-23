@@ -14,7 +14,10 @@ use remote::RemoteConnectionOptions;
 use settings::Settings;
 use ui::{KeyBinding, ListItem, ListItemSpacing, Tooltip, prelude::*};
 use ui_input::ErasedEditor;
-use util::{ResultExt, paths::PathExt};
+use util::{
+    ResultExt,
+    paths::{PathExt, PathStyle},
+};
 use workspace::{
     MultiWorkspace, OpenMode, OpenOptions, PathList, ProjectGroupKey, SerializedWorkspaceLocation,
     Workspace, WorkspaceDb, WorkspaceId, notifications::DetachAndPromptErr,
@@ -234,6 +237,11 @@ impl PickerDelegate for SidebarRecentProjectsDelegate {
                 })
                 .collect();
         } else {
+            let path_style = self
+                .workspace
+                .upgrade()
+                .map(|ws| ws.read(cx).path_style(cx))
+                .unwrap_or_else(PathStyle::local);
             let mut matches = smol::block_on(fuzzy::match_strings(
                 &candidates,
                 query,
@@ -242,6 +250,7 @@ impl PickerDelegate for SidebarRecentProjectsDelegate {
                 100,
                 &Default::default(),
                 cx.background_executor().clone(),
+                Some(path_style),
             ));
             matches.sort_unstable_by(|a, b| {
                 b.score
