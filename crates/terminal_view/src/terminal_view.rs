@@ -761,7 +761,7 @@ impl TerminalView {
             }
         }
 
-        // Always show cursor when not focused or in special modes
+        // For Standalone mode: always show cursor when not focused or in special modes
         if !focused
             || self
                 .terminal
