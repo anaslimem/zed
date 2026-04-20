@@ -1855,6 +1855,7 @@ impl Thread {
             tools: self.enabled_tools(cx),
             cancellation_tx,
             streaming_tool_inputs: HashMap::default(),
+            started_tool_uses: HashSet::default(),
             _task: cx.spawn(async move |this, cx| {
                 log::debug!("Starting agent turn execution");
 
@@ -2130,6 +2131,11 @@ impl Thread {
             None,
         );
         this.update(cx, |this, _cx| {
+            if let Some(running_turn) = this.running_turn.as_mut() {
+                running_turn
+                    .started_tool_uses
+                    .remove(&tool_result.tool_use_id);
+            }
             this.pending_message()
                 .tool_results
                 .insert(tool_result.tool_use_id.clone(), tool_result)
@@ -2348,6 +2354,10 @@ impl Thread {
 
                 let (mut sender, tool_input) = ToolInputSender::channel();
                 sender.send_partial(tool_use.input);
+                if !running_turn.started_tool_uses.insert(tool_use.id.clone()) {
+                    log::debug!("Ignoring duplicate streaming tool use {}", tool_use.id);
+                    return None;
+                }
                 running_turn
                     .streaming_tool_inputs
                     .insert(tool_use.id.clone(), sender);
@@ -2377,6 +2387,20 @@ impl Thread {
             sender.send_full(tool_use.input);
             return None;
         }
+
+        if self
+            .running_turn
+            .as_ref()
+            .is_some_and(|turn| turn.started_tool_uses.contains(&tool_use.id))
+        {
+            log::debug!("Ignoring duplicate tool use {}", tool_use.id);
+            return None;
+        }
+
+        self.running_turn
+            .as_mut()?
+            .started_tool_uses
+            .insert(tool_use.id.clone());
 
         log::debug!("Running tool {}", tool_use.name);
         let tool_input = ToolInput::ready(tool_use.input);
@@ -3163,6 +3187,7 @@ struct RunningTurn {
     /// Senders for tools that support input streaming and have already been
     /// started but are still receiving input from the LLM.
     streaming_tool_inputs: HashMap<LanguageModelToolUseId, ToolInputSender>,
+    started_tool_uses: HashSet<LanguageModelToolUseId>,
 }
 
 impl RunningTurn {

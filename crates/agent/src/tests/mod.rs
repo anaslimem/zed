@@ -948,6 +948,76 @@ async fn test_tool_authorization(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+async fn test_duplicate_tool_use_requests_authorization_once(cx: &mut TestAppContext) {
+    let ThreadTest { model, thread, .. } = setup(cx, TestModel::Fake).await;
+    let fake_model = model.as_fake();
+
+    let mut events = thread
+        .update(cx, |thread, cx| {
+            thread.add_tool(ToolRequiringPermission);
+            thread.send(UserMessageId::new(), ["abc"], cx)
+        })
+        .unwrap();
+    cx.run_until_parked();
+
+    let duplicate_tool_use = LanguageModelToolUse {
+        id: "duplicate_tool_id".into(),
+        name: ToolRequiringPermission::NAME.into(),
+        raw_input: "{}".into(),
+        input: json!({}),
+        is_input_complete: true,
+        thought_signature: None,
+    };
+    fake_model.send_last_completion_stream_event(LanguageModelCompletionEvent::ToolUse(
+        duplicate_tool_use.clone(),
+    ));
+    fake_model.send_last_completion_stream_event(LanguageModelCompletionEvent::ToolUse(
+        duplicate_tool_use,
+    ));
+    fake_model.end_last_completion_stream();
+
+    let tool_call_auth = next_tool_call_authorization(&mut events).await;
+    assert_eq!(
+        tool_call_auth.tool_call.tool_call_id,
+        acp::ToolCallId::new("duplicate_tool_id")
+    );
+
+    cx.run_until_parked();
+
+    let mut extra_authorizations = 0;
+    while let Some(Some(event)) = events.next().now_or_never() {
+        if matches!(event, Ok(ThreadEvent::ToolCallAuthorization(_))) {
+            extra_authorizations += 1;
+        }
+    }
+    assert_eq!(extra_authorizations, 0);
+
+    tool_call_auth
+        .response
+        .send(acp_thread::SelectedPermissionOutcome::new(
+            acp::PermissionOptionId::new("allow"),
+            acp::PermissionOptionKind::AllowOnce,
+        ))
+        .unwrap();
+    cx.run_until_parked();
+
+    let completion = fake_model.pending_completions().pop().unwrap();
+    let message = completion.messages.last().unwrap();
+    assert_eq!(
+        message.content,
+        vec![language_model::MessageContent::ToolResult(
+            LanguageModelToolResult {
+                tool_use_id: "duplicate_tool_id".into(),
+                tool_name: ToolRequiringPermission::NAME.into(),
+                is_error: false,
+                content: "Allowed".into(),
+                output: Some("Allowed".into())
+            }
+        )]
+    );
+}
+
+#[gpui::test]
 async fn test_tool_hallucination(cx: &mut TestAppContext) {
     let ThreadTest { model, thread, .. } = setup(cx, TestModel::Fake).await;
     let fake_model = model.as_fake();

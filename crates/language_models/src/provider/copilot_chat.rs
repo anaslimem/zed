@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anthropic::AnthropicModelMode;
 use anyhow::{Result, anyhow};
-use collections::HashMap;
+use collections::{HashMap, HashSet};
 use copilot::{GlobalCopilotAuth, Status};
 use copilot_chat::responses as copilot_responses;
 use copilot_chat::{
@@ -694,12 +694,14 @@ pub fn map_to_language_model_completion_events(
 
 pub struct CopilotResponsesEventMapper {
     pending_stop_reason: Option<StopReason>,
+    seen_tool_call_ids: HashSet<String>,
 }
 
 impl CopilotResponsesEventMapper {
     pub fn new() -> Self {
         Self {
             pending_stop_reason: None,
+            seen_tool_call_ids: HashSet::default(),
         }
     }
 
@@ -747,6 +749,10 @@ impl CopilotResponsesEventMapper {
                     thought_signature,
                     ..
                 } => {
+                    if !self.seen_tool_call_ids.insert(call_id.clone()) {
+                        return Vec::new();
+                    }
+
                     let mut events = Vec::new();
                     match parse_tool_arguments(&arguments) {
                         Ok(input) => events.push(Ok(LanguageModelCompletionEvent::ToolUse(
@@ -1518,6 +1524,42 @@ mod tests {
         }
         assert_eq!(stop_count, 1, "should emit exactly one Stop event");
         assert!(saw_tool_use_stop, "Stop reason should be ToolUse");
+    }
+
+    #[test]
+    fn responses_stream_ignores_duplicate_tool_calls() {
+        let function_call = responses::ResponseOutputItem::FunctionCall {
+            id: Some("fn_1".into()),
+            call_id: "call_1".into(),
+            name: "do_it".into(),
+            arguments: "{}".into(),
+            status: None,
+            thought_signature: None,
+        };
+        let events = vec![
+            responses::StreamEvent::OutputItemDone {
+                output_index: 0,
+                sequence_number: None,
+                item: function_call.clone(),
+            },
+            responses::StreamEvent::OutputItemDone {
+                output_index: 0,
+                sequence_number: None,
+                item: function_call,
+            },
+        ];
+
+        let mapped = map_events(events);
+
+        assert_eq!(mapped.len(), 2);
+        assert!(matches!(
+            mapped[0],
+            LanguageModelCompletionEvent::ToolUse(ref use_) if use_.id.to_string() == "call_1"
+        ));
+        assert!(matches!(
+            mapped[1],
+            LanguageModelCompletionEvent::Stop(StopReason::ToolUse)
+        ));
     }
 
     #[test]
